@@ -141,4 +141,23 @@ class plugin_manager {
         return $plugins;
     }
 
+    /**
+     * Get all sub-plugins that support auto provisioning.
+     *
+     * @return \core\plugininfo\base[]
+     */
+    public function get_auto_provision_type_plugins(): array {
+        return array_filter($this->build_plugins(), static function($plugin) {
+            $classes = \core_component::get_component_classes_in_namespace('watool_' . $plugin->name, 'tool');
+            if (!$class = array_key_first($classes)) {
+                return false;
+            }
+            $method = 'supports_auto_provision';
+            if (!method_exists($class, $method)) {
+                return false;
+            }
+            return $class::$method();
+        }
+        );
+    }
 }

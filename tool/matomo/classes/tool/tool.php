@@ -25,7 +25,11 @@
 
 namespace watool_matomo\tool;
 
+use stdClass;
+use tool_webanalytics\record;
+use tool_webanalytics\records_manager;
 use tool_webanalytics\tool\tool_base;
+use watool_matomo\client;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -47,12 +51,12 @@ class tool extends tool_base {
 
         $settings = $this->record->get_property('settings');
 
-        $template = new \stdClass();
-        $template->siteid = $settings['siteid'];
+        $template = new stdClass();
+        $template->siteid = $settings['siteid'] ?? '';
         $template->siteurl = $settings['siteurl'];
         $custompiwikjs = (isset($settings['piwikjsurl']) && !empty($settings['piwikjsurl']));
         $template->piwikjsurl = $custompiwikjs ? $settings['piwikjsurl'] : $settings['siteurl'];
-        $template->imagetrack = $settings['imagetrack'];
+        $template->imagetrack = $settings['imagetrack'] ?? '';
 
         $template->userid = false;
 
@@ -82,6 +86,10 @@ class tool extends tool_base {
         $mform->setType('siteurl', PARAM_TEXT);
         $mform->addRule('siteurl', get_string('required'), 'required', null, 'client');
 
+        $mform->addElement('password', 'apitoken', get_string('apitoken', 'watool_matomo'));
+        $mform->setType('apitoken', PARAM_TEXT);
+        $mform->addHelpButton('apitoken', 'apitoken', 'watool_matomo');
+
         $mform->addElement('text', 'piwikjsurl', get_string('piwikjsurl', 'watool_matomo'));
         $mform->addHelpButton('piwikjsurl', 'piwikjsurl', 'watool_matomo');
         $mform->setType('piwikjsurl', PARAM_URL);
@@ -90,7 +98,6 @@ class tool extends tool_base {
         $mform->addElement('text', 'siteid', get_string('siteid', 'watool_matomo'));
         $mform->addHelpButton('siteid', 'siteid', 'watool_matomo');
         $mform->setType('siteid', PARAM_TEXT);
-        $mform->addRule('siteid', get_string('required'), 'required', null, 'client');
 
         $mform->addElement('checkbox', 'imagetrack', get_string('imagetrack', 'watool_matomo'));
         $mform->addHelpButton('imagetrack', 'imagetrack', 'watool_matomo');
@@ -121,7 +128,7 @@ class tool extends tool_base {
      * @return void
      */
     public function form_validate(&$data, &$files, &$errors) {
-        if (empty($data['siteid'])) {
+        if (empty($data['siteid']) && empty($data['apitoken'])) {
             $errors['siteid'] = get_string('error:siteid', 'watool_matomo');
         }
 
@@ -153,11 +160,11 @@ class tool extends tool_base {
     /**
      * Build settings array from submitted form data.
      *
-     * @param \stdClass $data
+     * @param stdClass $data
      *
      * @return array
      */
-    public function form_build_settings(\stdClass $data): array {
+    public function form_build_settings(stdClass $data): array {
         $settings = [];
         $settings['siteid']  = isset($data->siteid) ? $data->siteid : '';
         $settings['siteurl'] = isset($data->siteurl) ? $data->siteurl : '';
@@ -165,6 +172,7 @@ class tool extends tool_base {
         $settings['imagetrack'] = isset($data->imagetrack) ? $data->imagetrack : 0;
         $settings['userid'] = isset($data->userid) ? $data->userid : 0;
         $settings['usefield'] = isset($data->usefield) ? $data->usefield : 'id';
+        $settings['apitoken'] = isset($data->apitoken) ? $data->apitoken : '';
 
         return $settings;
     }
@@ -172,16 +180,115 @@ class tool extends tool_base {
     /**
      * Set form data.
      *
-     * @param \stdClass $data Form data.
+     * @param stdClass $data Form data.
      *
      * @return void
      */
-    public function form_set_data(\stdClass &$data) {
+    public function form_set_data(stdClass &$data) {
         $data->siteid = isset($data->settings['siteid']) ? $data->settings['siteid'] : '';
         $data->siteurl = isset($data->settings['siteurl']) ? $data->settings['siteurl'] : '';
         $data->piwikjsurl = isset($data->settings['piwikjsurl']) ? $data->settings['piwikjsurl'] : '';
         $data->imagetrack = isset($data->settings['imagetrack']) ? $data->settings['imagetrack'] : 0;
         $data->userid = isset($data->settings['userid']) ? $data->settings['userid'] : 1;
         $data->usefield = isset($data->settings['usefield']) ? $data->settings['usefield'] : 'id';
+        $data->apitoken = isset($data->settings['apitoken']) ? $data->settings['apitoken'] : '';
+    }
+
+    /**
+     * Register a site with the configured Matomo instance, called from the instance form submission.
+     * Must have no site id set on the record yet.
+     * Must have apitoken and siteurl set in the record.
+     * Must not already be registered with the API using the current site url.
+     *
+     * @param record $record
+     * @return int
+     */
+    public function register_site(record $record): int {
+
+        $settings = $this->record->get_property('settings');
+        if (!empty($settings['siteid'])) {
+            return 0;
+        }
+
+        if (empty($settings['siteurl']) && empty($settings['apitoken'])) {
+            return 0;
+        }
+
+        $client = new client($settings['siteurl'], $settings['apitoken']);
+
+        if ($client->get_siteid_from_url()) {
+            return 0;
+        }
+
+        return $client->add_site();
+    }
+
+    /**
+     * Is the auto provisioning config set?
+     *
+     * @return bool
+     */
+    public static function supports_auto_provision(): bool {
+        $config = get_config('watool_matomo');
+
+        return !empty($config->autoapiurl) && !empty($config->autoapitoken);
+    }
+
+    /**
+     * Has the current siteurl changed based on any stored instances?
+     *
+     * @return bool
+     */
+    public static function can_auto_provision(): bool {
+        global $CFG;
+        if (!self::supports_auto_provision()) {
+            return false;
+        }
+        $canprovision = true;
+        $rm = new records_manager();
+        $records = $rm->get_all();
+        foreach ($records as $record) {
+            $settings = $record->get_property('settings');
+            $name = $record->get_property('name');
+            if ((!empty($settings['wwwroot']) && $settings['wwwroot'] === $CFG->wwwroot) || $name === 'auto-provisioned:FAILED') {
+                $canprovision = false;
+            }
+        }
+        return $canprovision;
+    }
+
+    /**
+     * Auto provision a new instance based on config 'autoapiurl' and 'autoapitoken'.
+     *
+     * @return void
+     */
+    public static function auto_provision(): void {
+        global $CFG;
+
+        $config = get_config('watool_matomo');
+
+        if (empty($config->autoapiurl) && empty($config->autoapitoken)) {
+            return;
+        }
+
+        $client = new client($config->autoapiurl, $config->autoapitoken);
+        $rm = new records_manager();
+        $data = new stdClass();
+        $data->name = 'auto-provisioned:' . uniqid();
+
+        try {
+            $siteid = $client->add_site();
+        } catch (Throwable $t) {
+            $data->name = 'auto-provisioned:FAILED';
+        }
+
+        $settings['siteid'] =  $siteid;
+        $settings['wwwroot'] = $CFG->wwwroot;
+        $settings['siteurl'] = $config->autoapiurl;
+        $settings['apitoken'] = $config->autoapitoken;
+        $data->type = 'matomo';
+        $data->settings = $settings;
+        $record = new record($data);
+        $rm->save($record);
     }
 }

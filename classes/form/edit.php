@@ -27,6 +27,7 @@ namespace tool_webanalytics\form;
 
 use moodleform;
 use tool_webanalytics\plugin_manager;
+use tool_webanalytics\record;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -138,10 +139,16 @@ class edit extends moodleform {
      * @return object submitted data; NULL if not valid or not submitted or cancelled
      */
     public function get_data() {
+        global $CFG;
+
         $data = parent::get_data();
 
         if (!empty($data)) {
             $data->settings = $this->tool->form_build_settings($data);
+            if ($siteid = $this->tool->register_site(new record($data))) {
+                $data->settings['siteid'] = $siteid;
+                $data->settings['wwwroot'] = $CFG->wwwroot;
+            }
         }
 
         return $data;

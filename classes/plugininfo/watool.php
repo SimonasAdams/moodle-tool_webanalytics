@@ -52,4 +52,51 @@ class watool extends base {
         return new  $class($record);
     }
 
+    /**
+     * Gt the classname of the tool to aid in calling methods dynamically.
+     *
+     * @return string
+     */
+    public function get_tool_classname() {
+        return '\\watool_' . $this->name . '\\tool\\tool';
+    }
+
+    /**
+     * Load tool specific settings.
+     *
+     * @param \part_of_admin_tree $adminroot
+     * @param $parentnodename
+     * @param $hassiteconfig
+     * @return void
+     */
+    public function load_settings(\part_of_admin_tree $adminroot, $parentnodename, $hassiteconfig) {
+        global $CFG, $USER, $DB, $OUTPUT, $PAGE; // In case settings.php wants to refer to them.
+        $ADMIN = $adminroot; // May be used in settings.php.
+        $plugininfo = $this; // Also can be used inside settings.php.
+
+        if (!$this->is_installed_and_upgraded()) {
+            return;
+        }
+
+        if (!$hassiteconfig || !file_exists($this->full_path('settings.php'))) {
+            return;
+        }
+
+        $section = $this->get_settings_section_name();
+        $settings = new \admin_settingpage($section, $this->displayname, 'moodle/site:config', $this->is_enabled() === false);
+        include($this->full_path('settings.php')); // This may also set $settings to null.
+
+        if ($settings) {
+            $ADMIN->add($parentnodename, $settings);
+        }
+    }
+
+    /**
+     * Get the tool specific section name for our settings page.
+     *
+     * @return string
+     */
+    public function get_settings_section_name() {
+        return 'watool_' . $this->name;
+    }
 }

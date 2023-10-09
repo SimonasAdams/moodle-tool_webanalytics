@@ -25,7 +25,6 @@
 
 namespace tool_webanalytics\tool;
 
-use tool_webanalytics\record;
 use tool_webanalytics\record_interface;
 
 defined('MOODLE_INTERNAL') || die();
@@ -110,10 +109,10 @@ interface tool_interface {
      * Called from the config instance form submission.
      * Return 0 as the siteid if the tool does not support it.
      *
-     * @param record $record data from the form submission.
+     * @param $client
      * @return int $siteid returned from the API.
      */
-    public function register_site(record $record): int;
+    public function register_site($client): int;
 
     /**
      * Does the tool support auto provision over an API?
@@ -132,7 +131,8 @@ interface tool_interface {
     /**
      * Auto provision the site with the API.
      *
+     * @param $client
      * @return void
      */
-    public static function auto_provision(): void;
+    public static function auto_provision($client): void;
 }

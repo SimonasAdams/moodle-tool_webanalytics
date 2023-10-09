@@ -38,8 +38,8 @@ if ($hassiteconfig) {
                     'watool_matomo_siteurl',
                     get_string('apiurl', 'watool_matomo'),
                     get_string('apiurl_help', 'watool_matomo'),
-                    '',
-                    PARAM_ALPHANUM
+                    $CFG->forced_plugin_settings['watool_matomo']['url'] ?? '',
+                    PARAM_URL
             )
     );
     $settings->add(
@@ -47,7 +47,7 @@ if ($hassiteconfig) {
                     'watool_matomo_token',
                     get_string('apitoken', 'watool_matomo'),
                     get_string('apitoken_desc', 'watool_matomo'),
-                    '',
+                    $CFG->forced_plugin_settings['watool_matomo']['token'] ?? '',
             )
     );
 }

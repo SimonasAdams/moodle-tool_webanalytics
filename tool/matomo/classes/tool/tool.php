@@ -26,10 +26,10 @@
 namespace watool_matomo\tool;
 
 use stdClass;
+use Throwable;
 use tool_webanalytics\record;
 use tool_webanalytics\records_manager;
 use tool_webanalytics\tool\tool_base;
-use watool_matomo\client;
 
 defined('MOODLE_INTERNAL') || die();
 
@@ -107,8 +107,8 @@ class tool extends tool_base {
         $mform->setDefault('userid', 1);
 
         $choices = [
-            'id' => 'id',
-            'username' => 'username',
+                'id' => 'id',
+                'username' => 'username',
         ];
 
         $mform->addElement('select', 'usefield', get_string('usefield', 'watool_matomo'), $choices);
@@ -166,7 +166,7 @@ class tool extends tool_base {
      */
     public function form_build_settings(stdClass $data): array {
         $settings = [];
-        $settings['siteid']  = isset($data->siteid) ? $data->siteid : '';
+        $settings['siteid'] = isset($data->siteid) ? $data->siteid : '';
         $settings['siteurl'] = isset($data->siteurl) ? $data->siteurl : '';
         $settings['piwikjsurl'] = isset($data->piwikjsurl) ? $data->piwikjsurl : '';
         $settings['imagetrack'] = isset($data->imagetrack) ? $data->imagetrack : 0;
@@ -196,31 +196,28 @@ class tool extends tool_base {
 
     /**
      * Register a site with the configured Matomo instance, called from the instance form submission.
-     * Must have no site id set on the record yet.
-     * Must have apitoken and siteurl set in the record.
-     * Must not already be registered with the API using the current site url.
+     * If the Moodle site url has changed since this setting was last saved then update the Matomo instance over the API.
+     * Otherwise, create a new instance over the API.
      *
-     * @param record $record
-     * @return int
+     * @param $client
+     * @return int siteid if successful, 0 if not.
      */
-    public function register_site(record $record): int {
+    public function register_site($client): int {
+        global $CFG;
 
         $settings = $this->record->get_property('settings');
-        if (!empty($settings['siteid'])) {
-            return 0;
+        $hasdnschanged = !empty($settings['wwwroot']) && $settings['wwwroot'] !== $CFG->wwwroot;
+        $siteid = $client->get_siteid_from_url($CFG->wwwroot);
+
+        if ($hasdnschanged && $siteid) {
+            return $client->update_site($siteid);
         }
 
-        if (empty($settings['siteurl']) && empty($settings['apitoken'])) {
-            return 0;
+        if (!$siteid) {
+            return $client->add_site();
         }
 
-        $client = new client($settings['siteurl'], $settings['apitoken']);
-
-        if ($client->get_siteid_from_url()) {
-            return 0;
-        }
-
-        return $client->add_site();
+        return $siteid;
     }
 
     /**
@@ -231,7 +228,7 @@ class tool extends tool_base {
     public static function supports_auto_provision(): bool {
         $config = get_config('watool_matomo');
 
-        return !empty($config->autoapiurl) && !empty($config->autoapitoken);
+        return !empty($config->siteurl) && !empty($config->apitoken);
     }
 
     /**
@@ -258,34 +255,52 @@ class tool extends tool_base {
     }
 
     /**
-     * Auto provision a new instance based on config 'autoapiurl' and 'autoapitoken'.
+     * Auto provision based on config 'siteurl' and 'apitoken'.
+     * If the DNS has changed since the current auto provisioned site was added...
+     * then attempt to update the matomo instance with the new URL. Otherwise, just provision a new site.
      *
+     * @param $client
      * @return void
      */
-    public static function auto_provision(): void {
+    public static function auto_provision($client): void {
         global $CFG;
 
         $config = get_config('watool_matomo');
+        $rm = new records_manager();
 
-        if (empty($config->autoapiurl) && empty($config->autoapitoken)) {
-            return;
+        // Try and find an existing auto provisioned record.
+        $allrecords = $rm->get_all();
+        $autoprovisioned = array_filter($allrecords, function($record) {
+            return preg_match("/^auto-provisioned:/", $record->get_property('name'));
+        });
+
+        if ($autoprovisioned = reset($autoprovisioned)) {
+            $apsettings = $autoprovisioned->get_property('settings');
+            $data = $autoprovisioned->export();
+        } else {
+            $data = new stdClass();
+            $data->name = 'auto-provisioned:' . uniqid();
         }
 
-        $client = new client($config->autoapiurl, $config->autoapitoken);
-        $rm = new records_manager();
-        $data = new stdClass();
-        $data->name = 'auto-provisioned:' . uniqid();
+        $hasdnschanged = !empty($apsettings['wwwroot']) && $apsettings['wwwroot'] !== $CFG->wwwroot;
 
         try {
-            $siteid = $client->add_site();
+            // If the DNS has changed, let's try to update an existing site.
+            if ($hasdnschanged && $siteid = $client->get_siteid_from_url($apsettings['wwwroot'])) {
+                $client->update_site($siteid, '', [$CFG->wwwroot]);
+            } else {
+                // No site provisioned yet, create a new one.
+                $siteid = $client->add_site();
+            }
         } catch (Throwable $t) {
             $data->name = 'auto-provisioned:FAILED';
+            $siteid = null;
         }
 
-        $settings['siteid'] =  $siteid;
+        $settings['siteid'] = $siteid;
         $settings['wwwroot'] = $CFG->wwwroot;
-        $settings['siteurl'] = $config->autoapiurl;
-        $settings['apitoken'] = $config->autoapitoken;
+        $settings['siteurl'] = preg_replace("/^(http|https):\/\//", '', $config->siteurl);
+        $settings['apitoken'] = $config->apitoken;
         $data->type = 'matomo';
         $data->settings = $settings;
         $record = new record($data);

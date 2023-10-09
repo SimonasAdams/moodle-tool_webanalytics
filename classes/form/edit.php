@@ -145,7 +145,10 @@ class edit extends moodleform {
 
         if (!empty($data)) {
             $data->settings = $this->tool->form_build_settings($data);
-            if ($siteid = $this->tool->register_site(new record($data))) {
+            $pluginmanager = plugin_manager::instance();
+            $currentplugin = $pluginmanager->get_enabled_plugin_by_type($this->type);
+            $client = $currentplugin->get_client($data);
+            if ($siteid = $this->tool->register_site($client)) {
                 $data->settings['siteid'] = $siteid;
                 $data->settings['wwwroot'] = $CFG->wwwroot;
             }

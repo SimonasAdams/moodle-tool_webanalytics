@@ -26,6 +26,7 @@
 namespace tool_webanalytics\tool;
 
 use stdClass;
+use tool_webanalytics\client_base;
 use tool_webanalytics\record;
 use tool_webanalytics\record_interface;
 
@@ -149,10 +150,10 @@ abstract class tool_base implements tool_interface {
     /**
      * Called from the config instance form submission.
      *
-     * @param record $record data from the form submission.
+     * @param $client
      * @return int $siteid returned from the API.
      */
-    public function register_site(record $record): int {
+    public function register_site($client): int {
         return 0;
     }
 
@@ -177,7 +178,8 @@ abstract class tool_base implements tool_interface {
     /**
      * Auto provision the site with the API.
      *
+     * @param $client
      * @return void
      */
-    public static function auto_provision(): void {}
+    public static function auto_provision($client): void {}
 }

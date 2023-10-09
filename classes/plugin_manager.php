@@ -25,6 +25,8 @@
 
 namespace tool_webanalytics;
 
+use tool_webanalytics\plugininfo\watool;
+
 defined('MOODLE_INTERNAL') || die;
 
 /**
@@ -115,6 +117,18 @@ class plugin_manager {
         }
 
         return static::$plugins;
+    }
+
+    /**
+     * @param string $type
+     * @return watool|null
+     */
+    public function get_enabled_plugin_by_type(string $type): ?watool {
+        if (is_null(static::$plugins)) {
+            static::$plugins = $this->build_plugins();
+        }
+
+        return static::$plugins[$type];
     }
 
     /**

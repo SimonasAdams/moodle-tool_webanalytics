@@ -34,26 +34,22 @@ use Throwable;
 /**
  * Wrap Http client.
  */
-class client extends curl {
-
-    /** @var moodle_url */
-    private $url;
-
-    /** @var string */
-    private $token;
+class client extends \tool_webanalytics\client_base {
 
     /**
-     * Constructor.
-     *
-     * @param string $url
-     * @param string $token
-     * @param array $settings
+     * @return string
+     * @throws Exception
      */
-    public function __construct(string $url, string $token, array $settings = []) {
-        $this->url = new moodle_url($url);
-        $this->token = $token;
+    private function get_api_url(): string {
+        if (empty($this->config->siteurl)) {
+            throw new \InvalidArgumentException('No siteurl set in config');
+        }
 
-        parent::__construct($settings);
+        $url = parse_url($this->config->siteurl);
+        if (!empty($url['scheme'])) {
+            return $this->config->siteurl;
+        }
+        return "https://{$url['path']}";
     }
 
     /**
@@ -66,7 +62,7 @@ class client extends curl {
                 'module' => 'API',
                 'method' => '',
                 'format' => 'JSON',
-                'token_auth' => $this->token
+                'token_auth' => $this->config->apitoken
         ];
     }
 
@@ -82,7 +78,7 @@ class client extends curl {
         $request = $this->build_request();
         $request['method'] = 'SitesManager.getSitesIdFromSiteUrl';
         $request['url'] = !empty($url) ? $url : $CFG->wwwroot;
-        $rawresponsebody = $this->post($this->url, $request);
+        $rawresponsebody = $this->post($this->get_api_url(), $request);
         $response = $this->validate_response_body($rawresponsebody, $request);
         $response = is_array($response) ? reset($response) : new stdClass();
 
@@ -99,7 +95,7 @@ class client extends curl {
         $request = $this->build_request();
         $request['method'] = 'SitesManager.getSiteUrlsFromId';
         $request['idSite'] = $siteid;
-        $rawresponsebody = $this->post($this->url, $request);
+        $rawresponsebody = $this->post($this->get_api_url(), $request);
         $response = $this->validate_response_body($rawresponsebody, $request);
         return is_array($response) ? $response : [];
     }
@@ -123,7 +119,7 @@ class client extends curl {
         $request['timezone'] = !empty($timezone) ? $timezone : core_date::get_server_timezone();
         $request['currency'] = !empty($currency) ? $currency : 'GBP';
         $request = array_merge($request, $this->build_urls_for_request($urls));
-        $rawresponse = $this->post($this->url, $request);
+        $rawresponse = $this->post($this->get_api_url(), $request);
         $responsebody = $this->validate_response_body($rawresponse, $request);
 
         return !empty($responsebody->value) ? $responsebody->value : 0;
@@ -156,7 +152,7 @@ class client extends curl {
         $request['timezone'] = !empty($timezone) ? $timezone : core_date::get_server_timezone();
         $request['currency'] = !empty($currency) ? $currency : 'GBP';
         $request = array_merge($request, $this->build_urls_for_request($urls));
-        $rawresponse = $this->post($this->url, $request);
+        $rawresponse = $this->post($this->get_api_url(), $request);
         $responsebody = $this->validate_response_body($rawresponse, $request);
 
         return !empty($responsebody->value) ? $responsebody->value : 0;

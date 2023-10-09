@@ -26,6 +26,7 @@
 namespace tool_webanalytics\plugininfo;
 
 use core\plugininfo\base;
+use stdClass;
 use tool_webanalytics\record_interface;
 use tool_webanalytics\tool\tool_interface;
 
@@ -98,5 +99,16 @@ class watool extends base {
      */
     public function get_settings_section_name() {
         return 'watool_' . $this->name;
+    }
+
+    /**
+     * @param stdClass $config
+     * @return mixed|void
+     */
+    public function get_client(stdClass $config) {
+        $class = "\watool_{$this->name}\client";
+        if (class_exists($class)) {
+            return new $class($config);
+        }
     }
 }
